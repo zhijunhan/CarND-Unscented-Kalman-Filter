@@ -28,7 +28,7 @@ UKF::UKF() {
   std_a_ = 3;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 30;
+  std_yawdd_ = 0.5;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -104,6 +104,22 @@ UKF::UKF() {
   MatrixXd S_lidar_ = MatrixXd(n_z_lidar_, n_z_lidar_);
   S_lidar_.fill(0.0);
 
+  // Initialize augmented process noise covariance for P_
+  Q_ = MatrixXd(2, 2);
+  Q_ << std_a_ * std_a_, 0.0,
+        0.0, std_yawdd_ * std_yawdd_;
+
+  // Lidar Measurement noise covariance matrix
+  R_lidar_ = MatrixXd(n_z_lidar_, n_z_lidar_);
+  R_lidar_ << std_laspx_ * std_laspx_, 0,
+        0, std_laspy_ * std_laspy_;
+
+  // Radar Measurement noise covariance matrix
+  R_radar_ = MatrixXd(n_z_radar_, n_z_radar_);
+  R_radar_ << std_radr_ * std_radr_, 0, 0,
+              0, std_radphi_ * std_radphi_, 0,
+              0, 0,std_radrd_ * std_radrd_;
+
   // time initialization
   previous_time = 0.0;
   delta_t = 0.0;
@@ -131,9 +147,9 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   	if (meas_package.sensor_type_ == MeasurementPackage::RADAR)
   	{
   		// Convert from polar to cartesian coordinates and initialize system states
-  		double rho = meas_package.raw_measurements_[0];
-  		double phi = meas_package.raw_measurements_[1];
-  		double rho_dot = meas_package.raw_measurements_[2];
+  		const double rho = meas_package.raw_measurements_[0];
+  		const double phi = meas_package.raw_measurements_[1];
+  		const double rho_dot = meas_package.raw_measurements_[2];
   		x_(0) = rho * cos(phi);
   		x_(1) = rho * sin(phi);
   		x_(2) = rho_dot;
@@ -197,10 +213,8 @@ void UKF::AugmentedSigmaPoints() {
   x_aug(6) = 0.0;
   //create augmented covariance matrix
   P_aug.topLeftCorner(n_x_, n_x_) = P_;
-  MatrixXd Q = MatrixXd(2,2);
-  Q << std_a_ * std_a_, 0.0,
-       0.0, std_yawdd_ * std_yawdd_;
-  P_aug.bottomRightCorner(2,2) = Q;
+
+  P_aug.bottomRightCorner(2,2) = Q_;
   //create square root matrix
   MatrixXd S = P_aug.llt().matrixL();
 
@@ -224,13 +238,13 @@ void UKF::SigmaPointPrediction() {
   for (int i = 0; i < 2*n_aug_+1; i++)
   {
   	//extract values for better readability
-  	double px = Xsig_aug_(0,i);
-  	double py = Xsig_aug_(1,i);
-  	double v = Xsig_aug_(2,i);
-  	double yaw = Xsig_aug_(3,i);
-  	double yawd = Xsig_aug_(4,i);
-  	double nu_a = Xsig_aug_(5,i);
-  	double nu_yawdd = Xsig_aug_(6,i);
+  	const double px = Xsig_aug_(0,i);
+  	const double py = Xsig_aug_(1,i);
+  	const double v = Xsig_aug_(2,i);
+  	const double yaw = Xsig_aug_(3,i);
+  	const double yawd = Xsig_aug_(4,i);
+  	const double nu_a = Xsig_aug_(5,i);
+  	const double nu_yawdd = Xsig_aug_(6,i);
   	//predicted state value
   	double px_p, py_p;
   	//avoid division by zero
@@ -247,11 +261,11 @@ void UKF::SigmaPointPrediction() {
   	double v_p = v;
   	double yaw_p = yaw + yawd * delta_t;
   	double yawd_p = yawd;
-  	//add noise
+
   	px_p = px_p + 0.5 * nu_a * delta_t * delta_t * cos(yaw);
   	py_p = py_p + 0.5 * nu_a * delta_t * delta_t * sin(yaw);
+  	//add noise
     v_p = v_p + nu_a * delta_t;
-
     yaw_p = yaw_p + 0.5 * nu_yawdd * delta_t * delta_t;
     yawd_p = yawd_p + nu_yawdd * delta_t;
     //write predicted sigma point into right column
@@ -299,8 +313,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   //perform Lidar measurement prediction
   PredictLidarMeasurement();
   //obtain actual Lidar measurements
-  double lx = meas_package.raw_measurements_[0];
-  double ly = meas_package.raw_measurements_[1];
+  const double lx = meas_package.raw_measurements_[0];
+  const double ly = meas_package.raw_measurements_[1];
   // read in actual lidar measurement
   VectorXd z_in = VectorXd::Zero(n_z_lidar_);
   z_in << lx, ly;
@@ -320,8 +334,8 @@ void UKF::PredictLidarMeasurement() {
   for (int i = 0; i < 2 * n_aug_ + 1; i++)
   {
   	//extract values for better readibility
-  	double p_x = Xsig_pred_(0,i);
-  	double p_y = Xsig_pred_(1,i);
+  	const double p_x = Xsig_pred_(0,i);
+  	const double p_y = Xsig_pred_(1,i);
   	//measurement model
   	Zsig(0,i) = p_x;
   	Zsig(1,i) = p_y;
@@ -349,12 +363,8 @@ void UKF::PredictLidarMeasurement() {
   }
 
   //add measurement noise covariance matrix
-  MatrixXd R = MatrixXd(n_z_lidar_, n_z_lidar_);
-  R << std_laspx_ * std_laspx_, 0,
-       0, std_laspy_ * std_laspy_;
-
-  S = S + R;
-
+  S = S + R_lidar_;
+  //update class memeber
   z_pred_lidar_ = z_pred;
   S_lidar_ = S;
 
@@ -405,9 +415,9 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   //perform Radar measurement prediction
   PredictRadarMeasurement();
   //obtain actual Radar measurements
-  double rho = meas_package.raw_measurements_[0];
-  double phi = meas_package.raw_measurements_[1];
-  double rho_dot = meas_package.raw_measurements_[2];
+  const double rho = meas_package.raw_measurements_[0];
+  const double phi = meas_package.raw_measurements_[1];
+  const double rho_dot = meas_package.raw_measurements_[2];
   // read in radar actual measurement
   VectorXd z_in = VectorXd::Zero(n_z_radar_);
   z_in << rho, phi, rho_dot;
@@ -424,13 +434,13 @@ void UKF::PredictRadarMeasurement() {
   for (int i = 0; i < 2 * n_aug_ + 1; i++) 
   {
     // extract values for better readibility
-    double p_x = Xsig_pred_(0,i);
-    double p_y = Xsig_pred_(1,i);
-    double v  = Xsig_pred_(2,i);
-    double yaw = Xsig_pred_(3,i);
+    const double p_x = Xsig_pred_(0,i);
+    const double p_y = Xsig_pred_(1,i);
+    const double v  = Xsig_pred_(2,i);
+    const double yaw = Xsig_pred_(3,i);
 
-    double v1 = cos(yaw) * v;
-    double v2 = sin(yaw) * v;
+    const double v1 = cos(yaw) * v;
+    const double v2 = sin(yaw) * v;
 
     // measurement model
     if(hypot(p_x, p_y) > 0.001)
@@ -466,11 +476,7 @@ void UKF::PredictRadarMeasurement() {
   }
 
   //add measurement noise covariance matrix
-  MatrixXd R = MatrixXd(n_z_radar_, n_z_radar_);
-  R <<    std_radr_ * std_radr_, 0, 0,
-          0, std_radphi_ * std_radphi_, 0,
-          0, 0,std_radrd_ * std_radrd_;
-  S = S + R;
+  S = S + R_radar_;
 
   z_pred_radar_ = z_pred;
   S_radar_ = S;

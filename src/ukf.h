@@ -28,6 +28,15 @@ public:
   ///* state covariance matrix
   MatrixXd P_;
 
+  ///* Process noise covariance matrix for augmented state covariance matrix expand
+  MatrixXd Q_;
+
+  ///* Lidar Measurement noise covariance matrix
+  MatrixXd R_lidar_;
+
+  ///* Radar Measurement noise covariance matrix
+  MatrixXd R_radar_;
+
   ///* predicted process sigma points matrix
   MatrixXd Xsig_pred_;
   ///* augmented state matrix
